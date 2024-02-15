@@ -36,19 +36,11 @@ def split_dataset(X, y, perc_val, perc_test, shuffle=True):
     return X, y
 
 
-def save_dataset(data_generator: Callable, data_generator_kwargs: Dict,
-                 perc_val: float, perc_test: float, format: str = "csv", shuffle=True):
-    """Generate, split and save the dataset.
-
-    Args:
-        S (SimplicialComplex): simplicial complex where the functions of the dataset
-        are defined.
-        num_samples_per_source (int): the multiplicity of every class (for now 3) of
-        functions of the dataset.
-        num_sources (int): number of types (1-3) of functions used to represent the
-        source term.
-        different functions in the dataset.
-        noise (np.array): noise to perturb the solution vector.
+def save_datasets(data_path: str, data_generator: Callable,
+                  data_generator_kwargs: Dict,
+                  perc_val: float, perc_test: float, format: str = "csv",
+                  shuffle=True):
+    """Generate and save the train, validation and test datasets.
     """
     data_X, data_y = data_generator(**data_generator_kwargs)
     X, y = split_dataset(data_X, data_y, perc_val, perc_test, shuffle)
@@ -58,12 +50,12 @@ def save_dataset(data_generator: Callable, data_generator_kwargs: Dict,
         savefunc = partial(np.savetxt, delimiter=",")
     elif format == "npy":
         savefunc = np.save
-    savefunc("X_train." + format, X_train)
-    savefunc("X_valid." + format, X_valid)
-    savefunc("X_test." + format, X_test)
-    savefunc("y_train." + format, y_train)
-    savefunc("y_valid." + format, y_valid)
-    savefunc("y_test." + format, y_test)
+    savefunc(os.path.join(data_path, "X_train." + format), X_train)
+    savefunc(os.path.join(data_path, "X_valid." + format), X_valid)
+    savefunc(os.path.join(data_path, "X_test." + format), X_test)
+    savefunc(os.path.join(data_path, "y_train." + format), y_train)
+    savefunc(os.path.join(data_path, "y_valid." + format), y_valid)
+    savefunc(os.path.join(data_path, "y_test." + format), y_test)
 
 
 def load_dataset(data_path: str, format: str = "csv") -> Tuple[npt.NDArray]:
@@ -76,7 +68,6 @@ def load_dataset(data_path: str, format: str = "csv") -> Tuple[npt.NDArray]:
         (np.array): training targets.
         (np.array): validation targets.
         (np.array): test targets.
-
 
     """
     if format == "csv":

@@ -16,7 +16,6 @@ __pycache__/*
 *.npy
 *.txt
 *.yaml
-!apps/*_template.yaml
 
 # Project files
 .ropeproject

@@ -93,7 +93,7 @@ if __name__ == '__main__':
     num_nodes = S.num_nodes
     data_generator_kwargs = {'S': S, 'num_samples_per_source': 4, 'num_sources': 3,
                              'noise': 0.*np.random.rand(num_nodes)}
-    u.save_dataset(data_generator=generate_dataset,
-                   data_generator_kwargs=data_generator_kwargs,
-                   perc_val=0.25,
-                   perc_test=0.25)
+    u.save_datasets(data_generator=generate_dataset,
+                    data_generator_kwargs=data_generator_kwargs,
+                    perc_val=0.25,
+                    perc_test=0.25)

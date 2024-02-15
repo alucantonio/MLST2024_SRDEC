@@ -9,6 +9,7 @@ import data.poisson.poisson_dataset as pd
 from dctkit.mesh import util
 from alpine.gp import gpsymbreg as gps
 from dctkit import config
+import data
 import dctkit
 
 import ray
@@ -181,12 +182,26 @@ def stgp_poisson(config_file, output_path=None):
     S.get_hodge_star()
     bnodes = mesh.cell_sets_dict["boundary"]["line"]
     num_nodes = S.num_nodes
+
+    np.random.seed(42)
+    mesh, _ = util.generate_square_mesh(0.08)
+    S = util.build_complex_from_mesh(mesh)
+    S.get_hodge_star()
+    num_nodes = S.num_nodes
+    data_generator_kwargs = {'S': S, 'num_samples_per_source': 4, 'num_sources': 3,
+                             'noise': 0.*np.random.rand(num_nodes)}
+    data.util.save_datasets(data_path="./",
+                            data_generator=pd.generate_dataset,
+                            data_generator_kwargs=data_generator_kwargs,
+                            perc_val=0.25,
+                            perc_test=0.25)
+
     X_train, X_val, X_test, y_train, y_val, y_test = load_dataset(
-        pd.data_path, "csv")
+        "./", "csv")
 
     # penalty parameter for the Dirichlet bcs
     gamma = 1000.
-    print(num_nodes)
+
     # initial guess for the solution of the Poisson problem
     u_0_vec = np.zeros(num_nodes, dtype=dctkit.float_dtype)
     u_0 = C.CochainP0(S, u_0_vec)
@@ -219,19 +234,14 @@ def stgp_poisson(config_file, output_path=None):
     # create symbolic regression problem instance
     gpsr = gps.GPSymbolicRegressor(
         pset=pset, fitness=fitness.remote,
-        error_metric=eval_MSE.remote, feature_extractors=[len], print_log=True,
+        error_metric=eval_MSE.remote, predict_func=eval_best_sols.remote,
+        feature_extractors=[len], print_log=True,
         common_data=common_params, config_file_data=config_file,
         save_best_individual=True, save_train_fit_history=True,
+        plot_best=True, plot_best_individual_tree=True,
         output_path="./")
 
     params_names = ('X', 'y')
-    # datasets = {'train': [X_train, y_train, bvalues_train],
-    #             'val': [X_val, y_val, bvalues_val],
-    #             'test': [X_test, y_test, bvalues_test]}
-    # gpsr.store_datasets_params(params_names, datasets)
-
-    # gpsr.register_eval_funcs(fitness=fitness.remote, error_metric=eval_MSE.remote,
-    #                          eval_sol=eval_best_sols.remote)
 
     if gpsr.plot_best:
         triang = tri.Triangulation(
@@ -240,20 +250,17 @@ def stgp_poisson(config_file, output_path=None):
                               S=S, bnodes=bnodes, gamma=gamma, u_0=u_0,
                               toolbox=gpsr.toolbox, triang=triang)
 
-    # gpsr.__register_map([len])
-
     start = time.perf_counter()
-    # opt_string = "SquareF(InnP0(InvMulP0(u, InnP0(u, fk)), delP1(dP0(u))))"
-    # opt_string = "SubF(InnP1(cobP0(u), cobP0(u)), MulF(2., InnP0(f, u)))"
-    # opt_individ = creator.Individual.from_string(opt_string, pset)
-    # seed = [opt_individ]
-    print(X_train.shape)
+
+    # seed = ["SquareF(InnP0(InvMulP0(u, InnP0(u, fk)), delP1(dP0(u))))"]
+
     gpsr.fit(X_train, y_train, param_names=params_names, X_val=X_val,
              y_val=y_val)
-    # gpsr.__run(print_log=True, seed=None,
-    #            save_best_individual=True, save_train_fit_history=True,
-    #            save_best_test_sols=True, X_test_param_name="X",
-    #            output_path=output_path)
+
+    gpsr.predict(X_test, y_test, param_names=params_names)
+
+    print("Best MSE on the test set: ", gpsr.score(X_test, y_test,
+                                                   param_names=params_names))
 
     print(f"Elapsed time: {round(time.perf_counter() - start, 2)}")
 
