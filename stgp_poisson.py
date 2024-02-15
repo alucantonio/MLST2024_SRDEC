@@ -102,6 +102,7 @@ def eval_MSE_sol(individual: Callable, indlen: int, X: npt.NDArray,
 
         if math.isnan(current_err):
             MSE = 1e5
+            us = [u_0.coeffs]*X.shape[0]
             break
 
         MSE += current_err
@@ -162,8 +163,8 @@ def plot_sol(ind: gp.PrimitiveTree, X: npt.NDArray, y: npt.NDArray,
     plt.figure(10, figsize=(8, 4))
     plt.clf()
     fig = plt.gcf()
-    _, axes = plt.subplots(2, 3, num=10)
-    for i in range(0, 3):
+    _, axes = plt.subplots(2, X.shape[0], num=10)
+    for i in range(0, X.shape[0]):
         axes[0, i].tricontourf(triang, u[i], cmap='RdBu', levels=20)
         pltobj = axes[1, i].tricontourf(triang, X[i], cmap='RdBu', levels=20)
         axes[0, i].set_box_aspect(1)
@@ -184,10 +185,6 @@ def stgp_poisson(config_file, output_path=None):
     num_nodes = S.num_nodes
 
     np.random.seed(42)
-    mesh, _ = util.generate_square_mesh(0.08)
-    S = util.build_complex_from_mesh(mesh)
-    S.get_hodge_star()
-    num_nodes = S.num_nodes
     data_generator_kwargs = {'S': S, 'num_samples_per_source': 4, 'num_sources': 3,
                              'noise': 0.*np.random.rand(num_nodes)}
     data.util.save_datasets(data_path="./",

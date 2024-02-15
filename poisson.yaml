@@ -64,5 +64,5 @@ gp:
   residual_formulation: False
 
 plot:
-  plot_best: False
+  plot_best: True
   plot_best_genealogy: False
