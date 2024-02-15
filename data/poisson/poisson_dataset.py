@@ -3,7 +3,7 @@ from dctkit.mesh import simplex, util
 from dctkit.dec import cochain as C
 import os
 from dctkit import config
-import alpine.data.util as u
+import data.util as u
 import numpy.typing as npt
 from typing import Tuple
 
