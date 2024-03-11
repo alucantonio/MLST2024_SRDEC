@@ -17,10 +17,10 @@ data_path = os.path.dirname(os.path.realpath(__file__))
 
 
 def generate_dataset(S: simplex.SimplicialComplex, num_samples_per_source: int,
-                     num_sources: int, noise: npt.NDArray) -> Tuple[npt.NDArray,
-                                                                    npt.NDArray]:
-    """Generate a dataset for the Poisson problem Delta u + f = 0, i.e. collection of
-    pairs source term - solution vectors.
+                     num_sources: int,
+                     noise: npt.NDArray) -> Tuple[npt.NDArray, npt.NDArray]:
+    """Generate a dataset for the Poisson problem Delta u + f = 0, i.e.
+    collection of pairs source term - solution vectors.
 
     Args:
         S: simplicial complex where the functions of the dataset
@@ -49,7 +49,7 @@ def generate_dataset(S: simplex.SimplicialComplex, num_samples_per_source: int,
             # ith quadratic function
             u_i = (i+1)*np.exp(np.sin(x)) + ((i+1)**2)*np.exp(np.cos(y))
             u_i_coch = C.CochainP0(S, u_i)
-            f_i = C.laplacian(u_i_coch).coeffs
+            f_i = C.laplacian(u_i_coch).coeffs.flatten()
             data_X[num_sources*i, :] = u_i + (max(u_i) - min(u_i))*noise
             data_y[num_sources*i, :] = f_i
 
@@ -59,7 +59,7 @@ def generate_dataset(S: simplex.SimplicialComplex, num_samples_per_source: int,
                 1/(i+1)*np.log(1 + y)
             u_i_coch = C.CochainP0(S, u_i)
             # f_i = (i+1)/((1 + x)**2) + 1/((i+1)*(1+y)**2)
-            f_i = C.laplacian(u_i_coch).coeffs
+            f_i = C.laplacian(u_i_coch).coeffs.flatten()
             data_X[num_sources*i+1, :] = u_i + (max(u_i) - min(u_i))*noise
             data_y[num_sources*i+1, :] = f_i
 
@@ -68,7 +68,7 @@ def generate_dataset(S: simplex.SimplicialComplex, num_samples_per_source: int,
             u_i = x**(i+3) + y**(i+3)
             u_i_coch = C.CochainP0(S, u_i)
             f_i = -(i+3)*(i+2)*(x**(i+1) + y**(i+1))
-            f_i = C.laplacian(u_i_coch).coeffs
+            f_i = C.laplacian(u_i_coch).coeffs.flatten()
             data_X[num_sources*i+2, :] = u_i + (max(u_i) - min(u_i))*noise
             data_y[num_sources*i+2, :] = f_i
 

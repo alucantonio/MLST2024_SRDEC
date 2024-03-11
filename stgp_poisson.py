@@ -8,6 +8,7 @@ from data.util import load_dataset
 import data.poisson.poisson_dataset as pd
 from dctkit.mesh import util
 from alpine.gp import gpsymbreg as gps
+from alpine.data import Dataset
 from dctkit import config
 import data
 import dctkit
@@ -43,11 +44,11 @@ def is_valid_energy(u: npt.NDArray, prb: oc.OptimizationProblem,
     return is_valid
 
 
-def eval_MSE_sol(individual: Callable, indlen: int, X: npt.NDArray,
-                 y: npt.NDArray, S: SimplicialComplex, bnodes: npt.NDArray,
+def eval_MSE_sol(individual: Callable, indlen: int, D: Dataset,
+                 S: SimplicialComplex, bnodes: npt.NDArray,
                  gamma: float, u_0: C.CochainP0) -> Tuple[float, npt.NDArray]:
 
-    num_nodes = X.shape[1]
+    num_nodes = D.X.shape[1]
 
     # need to call config again before using JAX in energy evaluations to make
     # sure that  the current worker has initialized JAX
@@ -59,8 +60,8 @@ def eval_MSE_sol(individual: Callable, indlen: int, X: npt.NDArray,
         c = C.CochainP0(S, x)
         fk = C.CochainP0(S, curr_y)
         if residual_formulation:
-            total_energy = C.inner_product(individual(c, fk),
-                                           individual(c, fk)) + penalty
+            total_energy = C.inner(individual(c, fk),
+                                   individual(c, fk)) + penalty
         else:
             total_energy = individual(c, fk) + penalty
         return total_energy
@@ -73,10 +74,10 @@ def eval_MSE_sol(individual: Callable, indlen: int, X: npt.NDArray,
     us = []
 
     # Dirichlet boundary conditions for all the samples
-    bvalues = X[:, bnodes]
+    bvalues = D.X[:, bnodes]
 
     # loop over dataset samples
-    for i, curr_y in enumerate(y):
+    for i, curr_y in enumerate(D.y):
 
         curr_bvalues = bvalues[i, :]
 
@@ -84,7 +85,7 @@ def eval_MSE_sol(individual: Callable, indlen: int, X: npt.NDArray,
         prb.set_obj_args(args)
 
         # minimize the objective
-        x = prb.solve(x0=u_0.coeffs, ftol_abs=1e-12,
+        x = prb.solve(x0=u_0.coeffs.flatten(), ftol_abs=1e-12,
                       ftol_rel=1e-12, maxeval=1000)
 
         if (prb.last_opt_result == 1 or prb.last_opt_result == 3
@@ -94,7 +95,7 @@ def eval_MSE_sol(individual: Callable, indlen: int, X: npt.NDArray,
             valid_energy = is_valid_energy(u=x, prb=prb, bnodes=bnodes)
 
             if valid_energy:
-                current_err = np.linalg.norm(x-X[i, :])**2
+                current_err = np.linalg.norm(x-D.X[i, :])**2
             else:
                 current_err = math.nan
         else:
@@ -102,46 +103,45 @@ def eval_MSE_sol(individual: Callable, indlen: int, X: npt.NDArray,
 
         if math.isnan(current_err):
             MSE = 1e5
-            us = [u_0.coeffs]*X.shape[0]
+            us = [u_0.coeffs.flatten()]*D.X.shape[0]
             break
 
         MSE += current_err
 
         us.append(x)
 
-    MSE *= 1/X.shape[0]
+    MSE *= 1/D.X.shape[0]
 
     return MSE, us
 
 
 @ray.remote(num_cpus=2)
-def eval_best_sols(individual: Callable, indlen: int, X: npt.NDArray,
-                   y: npt.NDArray, S: SimplicialComplex, bnodes: npt.NDArray,
+def eval_best_sols(individual: Callable, indlen: int, D: Dataset,
+                   S: SimplicialComplex, bnodes: npt.NDArray,
                    gamma: float, u_0: npt.NDArray,
                    penalty: dict) -> npt.NDArray:
 
-    _, best_sols = eval_MSE_sol(individual, indlen, X, y, S, bnodes,
-                                gamma, u_0)
+    _, best_sols = eval_MSE_sol(individual, indlen, D, S, bnodes, gamma, u_0)
 
     return best_sols
 
 
 @ray.remote(num_cpus=2)
-def eval_MSE(individual: Callable, indlen: int, X: npt.NDArray, y: npt.NDArray,
+def eval_MSE(individual: Callable, indlen: int, D: Dataset,
              S: SimplicialComplex, bnodes: npt.NDArray, gamma: float,
              u_0: npt.NDArray, penalty: dict) -> float:
 
-    MSE, _ = eval_MSE_sol(individual, indlen, X, y, S, bnodes, gamma, u_0)
+    MSE, _ = eval_MSE_sol(individual, indlen, D, S, bnodes, gamma, u_0)
 
     return MSE
 
 
 @ray.remote(num_cpus=2)
-def fitness(individual: Callable, indlen: int, X: npt.NDArray, y: npt.NDArray,
+def fitness(individual: Callable, indlen: int, D: Dataset,
             S: SimplicialComplex, bnodes: npt.NDArray, gamma: float,
             u_0: npt.NDArray, penalty: dict) -> Tuple[float, ]:
 
-    MSE, _ = eval_MSE_sol(individual, indlen, X, y, S, bnodes, gamma, u_0)
+    MSE, _ = eval_MSE_sol(individual, indlen, D, S, bnodes, gamma, u_0)
 
     # penalty terms on length
     fitness = MSE + penalty["reg_param"]*indlen
@@ -150,23 +150,23 @@ def fitness(individual: Callable, indlen: int, X: npt.NDArray, y: npt.NDArray,
 
 
 # Plot best solution
-def plot_sol(ind: gp.PrimitiveTree, X: npt.NDArray, y: npt.NDArray,
+def plot_sol(ind: gp.PrimitiveTree, D: Dataset,
              S: SimplicialComplex, bnodes: npt.NDArray,
              gamma: float, u_0: C.CochainP0, toolbox: base.Toolbox,
              triang: tri.Triangulation):
 
     indfun = toolbox.compile(expr=ind)
 
-    _, u = eval_MSE_sol(indfun, indlen=0, X=X, y=y, S=S, bnodes=bnodes,
+    _, u = eval_MSE_sol(indfun, indlen=0, D=D, S=S, bnodes=bnodes,
                         gamma=gamma, u_0=u_0)
 
     plt.figure(10, figsize=(8, 4))
     plt.clf()
     fig = plt.gcf()
-    _, axes = plt.subplots(2, X.shape[0], num=10)
-    for i in range(0, X.shape[0]):
+    _, axes = plt.subplots(2, D.X.shape[0], num=10)
+    for i in range(0, D.X.shape[0]):
         axes[0, i].tricontourf(triang, u[i], cmap='RdBu', levels=20)
-        pltobj = axes[1, i].tricontourf(triang, X[i], cmap='RdBu', levels=20)
+        pltobj = axes[1, i].tricontourf(triang, D.X[i], cmap='RdBu', levels=20)
         axes[0, i].set_box_aspect(1)
         axes[1, i].set_box_aspect(1)
     plt.colorbar(pltobj, ax=axes)
@@ -185,7 +185,8 @@ def stgp_poisson(config_file, output_path=None):
     num_nodes = S.num_nodes
 
     np.random.seed(42)
-    data_generator_kwargs = {'S': S, 'num_samples_per_source': 4, 'num_sources': 3,
+    data_generator_kwargs = {'S': S, 'num_samples_per_source': 4,
+                             'num_sources': 3,
                              'noise': 0.*np.random.rand(num_nodes)}
     data.util.save_datasets(data_path="./",
                             data_generator=pd.generate_dataset,
@@ -238,12 +239,14 @@ def stgp_poisson(config_file, output_path=None):
         plot_best=True, plot_best_individual_tree=True,
         output_path="./")
 
-    params_names = ('X', 'y')
+    train_data = Dataset("D", X_train, y_train)
+    test_data = Dataset("D", X_test, y_test)
+    val_data = Dataset("D", X_val, y_val)
 
     if gpsr.plot_best:
         triang = tri.Triangulation(
             S.node_coords[:, 0], S.node_coords[:, 1], S.S[2])
-        gpsr.toolbox.register("plot_best_func", plot_sol, X=X_val, y=y_val,
+        gpsr.toolbox.register("plot_best_func", plot_sol, D=val_data,
                               S=S, bnodes=bnodes, gamma=gamma, u_0=u_0,
                               toolbox=gpsr.toolbox, triang=triang)
 
@@ -251,13 +254,11 @@ def stgp_poisson(config_file, output_path=None):
 
     # seed = ["SquareF(InnP0(InvMulP0(u, InnP0(u, fk)), delP1(dP0(u))))"]
 
-    gpsr.fit(X_train, y_train, param_names=params_names, X_val=X_val,
-             y_val=y_val)
+    gpsr.fit(train_data, val_data)
 
-    gpsr.predict(X_test, y_test, param_names=params_names)
+    gpsr.predict(test_data)
 
-    print("Best MSE on the test set: ", gpsr.score(X_test, y_test,
-                                                   param_names=params_names))
+    print("Best MSE on the test set: ", gpsr.score(test_data))
 
     print(f"Elapsed time: {round(time.perf_counter() - start, 2)}")
 

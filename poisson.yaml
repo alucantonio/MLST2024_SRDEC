@@ -2,7 +2,7 @@
 gp:
   NINDIVIDUALS: 10 #2000
   NGEN: 10
-  CXPB: 0.2
+  crossover_prob: 0.2
   MUTPB: 0.8
   frac_elitist: 0
   min_: 2
@@ -62,7 +62,3 @@ gp:
     {"name": "Log", "dimension": ["0","1", "2"], "rank": ["SC"]}
   ]
   residual_formulation: False
-
-plot:
-  plot_best: True
-  plot_best_genealogy: False

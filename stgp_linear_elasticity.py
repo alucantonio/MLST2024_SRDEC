@@ -3,11 +3,12 @@ from dctkit.mesh.simplex import SimplicialComplex
 from dctkit.math.opt import optctrl as oc
 import matplotlib.pyplot as plt
 from deap import gp, base
-from alpine.data.util import load_dataset
-from alpine.data.linear_elasticity.linear_elasticity_dataset import data_path
+from data.util import load_dataset
+from data.linear_elasticity.linear_elasticity_dataset import data_path
 from dctkit.mesh import util
 from alpine.gp import gpsymbreg as gps
-from apps.util import get_LE_boundary_values
+from alpine.data import Dataset
+from util import get_LE_boundary_values
 from dctkit import config
 import dctkit
 
@@ -30,16 +31,19 @@ residual_formulation = False
 config()
 
 
-def eval_MSE_sol(func: Callable, indlen: int, X: npt.NDArray,
-                 bvalues: dict, S: SimplicialComplex, gamma: float,
+def eval_MSE_sol(func: Callable, indlen: int, D: Dataset,
+                 S: SimplicialComplex, gamma: float,
                  u_0: C.CochainP0) -> Tuple[float, npt.NDArray]:
+
+    X = D.X[0]
+    bvalues = D.X[1]
 
     num_data, num_nodes, dim_embedded_space = X.shape
 
     num_faces = S.S[2].shape[0]
 
-    # need to call config again before using JAX in energy evaluations to make sure that
-    # the current worker has initialized JAX
+    # need to call config again before using JAX in energy evaluations to
+    # make sure that the current worker has initialized JAX
     config()
 
     # create objective function and set its energy function
@@ -77,8 +81,6 @@ def eval_MSE_sol(func: Callable, indlen: int, X: npt.NDArray,
         # extract current bvalues
         curr_bvalues = bvalues[i]
 
-        # set current bvalues and vec_y for the Poisson problem
-        # args = {'vec_y': vec_y, 'vec_bvalues': vec_bvalues}
         args = {'curr_bvalues': curr_bvalues}
         prb.set_obj_args(args)
 
@@ -114,32 +116,33 @@ def eval_MSE_sol(func: Callable, indlen: int, X: npt.NDArray,
 
 
 @ray.remote(num_cpus=2)
-def eval_best_sols(individual: Callable, indlen: int, X: npt.NDArray,
+def eval_best_sols(individual: Callable, indlen: int, D: Dataset,
                    bvalues: dict, S: SimplicialComplex,
-                   gamma: float, u_0: npt.NDArray, penalty: dict) -> npt.NDArray:
+                   gamma: float, u_0: npt.NDArray,
+                   penalty: dict) -> npt.NDArray:
 
-    _, best_sols = eval_MSE_sol(individual, indlen, X, bvalues, S,
+    _, best_sols = eval_MSE_sol(individual, indlen, D, bvalues, S,
                                 gamma, u_0)
 
     return best_sols
 
 
 @ray.remote(num_cpus=2)
-def eval_MSE(individual: Callable, indlen: int, X: npt.NDArray,
+def eval_MSE(individual: Callable, indlen: int, D: Dataset,
              bvalues: dict, S: SimplicialComplex,
              gamma: float, u_0: npt.NDArray, penalty: dict) -> float:
 
-    MSE, _ = eval_MSE_sol(individual, indlen, X, bvalues, S, gamma, u_0)
+    MSE, _ = eval_MSE_sol(individual, indlen, D, bvalues, S, gamma, u_0)
 
     return MSE
 
 
 @ray.remote(num_cpus=2)
-def eval_fitness(individual: Callable, indlen: int, X: npt.NDArray,
-                 bvalues: dict, S: SimplicialComplex, gamma: float,
-                 u_0: npt.NDArray, penalty: dict) -> Tuple[float, ]:
+def fitness(individual: Callable, indlen: int, D: Dataset,
+            bvalues: dict, S: SimplicialComplex, gamma: float,
+            u_0: npt.NDArray, penalty: dict) -> Tuple[float, ]:
 
-    total_err, _ = eval_MSE_sol(individual, indlen, X, bvalues, S, gamma, u_0)
+    total_err, _ = eval_MSE_sol(individual, indlen, D, bvalues, S, gamma, u_0)
 
     # penalty terms on length
     objval = total_err + penalty["reg_param"]*indlen
@@ -178,7 +181,8 @@ def stgp_linear_elasticity(config_file, output_path=None):
     lc = 0.2
     L = 2.
     with pygmsh.geo.Geometry() as geom:
-        p = geom.add_polygon([[0., 0.], [L, 0.], [L, L], [0., L]], mesh_size=lc)
+        p = geom.add_polygon(
+            [[0., 0.], [L, 0.], [L, L], [0., L]], mesh_size=lc)
         # create a default physical group for the boundary lines
         geom.add_physical(p.lines, label="boundary")
         geom.add_physical(p.lines[0], label="down")
@@ -193,7 +197,8 @@ def stgp_linear_elasticity(config_file, output_path=None):
     S.get_flat_DPP_weights()
 
     # load data
-    X_train, X_val, X_test, y_train, y_val, y_test = load_dataset(data_path, "npy")
+    X_train, X_val, X_test, y_train, y_val, y_test = load_dataset(
+        data_path, "npy")
 
     # set bc
     num_faces = S.S[2].shape[0]
@@ -240,7 +245,8 @@ def stgp_linear_elasticity(config_file, output_path=None):
     # define primitive set and add primitives and terminals
     if residual_formulation:
         print("Using residual formulation.")
-        pset = gp.PrimitiveSetTyped("MAIN", [C.CochainP0, C.CochainP0], C.Cochain)
+        pset = gp.PrimitiveSetTyped(
+            "MAIN", [C.CochainP0, C.CochainP0], C.Cochain)
         # ones cochain
         pset.addTerminal(C.Cochain(S.num_nodes, True, S, np.ones(
             S.num_nodes, dtype=dctkit.float_dtype)), C.Cochain, name="F")
@@ -261,29 +267,33 @@ def stgp_linear_elasticity(config_file, output_path=None):
     # rename arguments
     pset.renameArguments(ARG0="F")
 
-    # create symbolic regression problem instance
-    GPprb = gps.GPSymbolicRegressor(pset=pset, config_file_data=config_file)
-
     penalty = config_file["gp"]["penalty"]
 
-    GPprb.store_eval_common_params({'S': S, 'penalty': penalty,
-                                    'gamma': gamma, 'u_0': u_0})
+    common_params = {'S': S, 'penalty': penalty, 'gamma': gamma, 'u_0': u_0}
 
-    params_names = ('X', 'bvalues')
-    datasets = {'train': [X_train, bvalues_train],
-                'val': [X_val, bvalues_val],
-                'test': [X_test, bvalues_test]}
-    GPprb.store_datasets_params(params_names, datasets)
+    # create symbolic regression problem instance
+    gpsr = gps.GPSymbolicRegressor(pset=pset, fitness=fitness.remote,
+                                   error_metric=eval_MSE.remote,
+                                   predict_func=eval_best_sols.remote,
+                                   feature_extractors=[len],
+                                   print_log=True, common_data=common_params,
+                                   config_file_data=config_file,
+                                   save_best_individual=True,
+                                   save_train_fit_history=True,
+                                   plot_best=False,
+                                   plot_best_individual_tree=True,
+                                   output_path="./")
 
-    GPprb.register_eval_funcs(fitness=eval_fitness.remote, error_metric=eval_MSE.remote,
-                              eval_sol=eval_best_sols.remote)
+    # datasets = {'train': [X_train, bvalues_train],
+    #             'val': [X_val, bvalues_val],
+    #             'test': [X_test, bvalues_test]}
 
-    if GPprb.plot_best:
-        GPprb.toolbox.register("plot_best_func", plot_sol, X=X_val,
-                               bvalues=bvalues_val, S=S, gamma=gamma, u_0=u_0,
-                               toolbox=GPprb.toolbox)
+    train_data = Dataset("D", [X_train, bvalues_train], y_train)
 
-    GPprb.__register_map([len])
+    if gpsr.plot_best:
+        gpsr.toolbox.register("plot_best_func", plot_sol, X=X_val,
+                              bvalues=bvalues_val, S=S, gamma=gamma, u_0=u_0,
+                              toolbox=gpsr.toolbox)
 
     start = time.perf_counter()
     # epsilon = "SubCD0T(symD0T(F), I)"
@@ -293,11 +303,7 @@ def stgp_linear_elasticity(config_file, output_path=None):
     # opt_string = ""
     # opt_individ = creator.Individual.from_string(opt_string, pset)
     # seed = [opt_individ]
-
-    GPprb.__run(print_log=True, seed=None,
-                save_best_individual=True, save_train_fit_history=True,
-                save_best_test_sols=True, X_test_param_name="X",
-                output_path=output_path)
+    gpsr.fit(train_data)
 
     print(f"Elapsed time: {round(time.perf_counter() - start, 2)}")
 
