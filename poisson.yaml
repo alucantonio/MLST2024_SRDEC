@@ -1,6 +1,6 @@
 gp:
-  NINDIVIDUALS: 10 #2000
-  NGEN: 10
+  NINDIVIDUALS: 500 #2000
+  NGEN: 100
   multi_island:
     num_islands: 1
     migration: { "freq": 10, "frac": 0.05 }
@@ -10,17 +10,17 @@ gp:
   min_: 2
   max_: 5
   overlapping_generation: True
-  validate: True
-  penalty: { "method": "length", "reg_param": 0. }
+  validate: False
+  penalty: { "method": "length", "reg_param": 0.1 }
   select:
     fun: tools.selection.tournament_with_elitism
-    kargs: "{'num_elitist': self.n_elitist, 'tournsize': 2, 'stochastic_tourn': { 'enabled': False, 'prob': [0.7, 0.3] }}"
+    kargs: "{'num_elitist': self.n_elitist, 'tournsize': 2, 'stochastic_tourn': { 'enabled': True, 'prob': [0.7, 0.3] }}"
   mutate:
     fun: gp.mixedMutate
     # fun: gp.mutNodeReplacement
     # fun: gp.mutInsert
     # fun: gp.mutShrink
-    kargs: "{'expr': self.toolbox.expr_mut, 'pset': self.pset, 'prob': [0.7, 0.2, 0.1]}" # string is important
+    kargs: "{'expr': self.toolbox.expr_mut, 'pset': self.pset, 'prob': [0.8, 0.2, 0.]}" # string is important
     expr_mut: gp.genHalfAndHalf
     expr_mut_kargs: "{'min_': 1, 'max_': 3}"
   crossover:

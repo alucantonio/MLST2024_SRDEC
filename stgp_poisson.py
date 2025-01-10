@@ -143,7 +143,7 @@ def eval_MSE_sol(
     return MSE, us
 
 
-@ray.remote(num_cpus=2)
+@ray.remote(num_cpus=4)
 def predict(individuals_str, toolbox, D, S, bnodes, gamma, u_0, penalty):
 
     callables = compile_individuals(toolbox, individuals_str)
@@ -156,7 +156,7 @@ def predict(individuals_str, toolbox, D, S, bnodes, gamma, u_0, penalty):
     return u
 
 
-@ray.remote(num_cpus=2)
+@ray.remote(num_cpus=4)
 def score(
     individuals_str,
     toolbox,
@@ -178,7 +178,7 @@ def score(
     return MSE
 
 
-@ray.remote(num_cpus=2)
+@ray.remote(num_cpus=4)
 def fitness(
     individuals_str,
     toolbox,
@@ -302,6 +302,8 @@ def stgp_poisson(config_file, output_path=None):
         "u_0": u_0,
     }
 
+    # seed = ["SquareF(InnP0(InvMulP0(u, InnP0(u, fk)), delP1(dP0(u))))"]
+
     gpsr = gps.GPSymbolicRegressor(
         pset=pset,
         fitness=fitness.remote,
@@ -314,7 +316,9 @@ def stgp_poisson(config_file, output_path=None):
         save_train_fit_history=True,
         plot_best=False,
         plot_best_individual_tree=True,
+        plot_history=False,
         output_path="./",
+        batch_size=1,
     )
 
     train_data = Dataset("D", X_train, y_train)
@@ -336,8 +340,6 @@ def stgp_poisson(config_file, output_path=None):
         )
 
     start = time.perf_counter()
-
-    # seed = ["SquareF(InnP0(InvMulP0(u, InnP0(u, fk)), delP1(dP0(u))))"]
 
     gpsr.fit(train_data, val_data)
 

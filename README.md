@@ -20,8 +20,11 @@ For each benchmark, run the corresponding main script (`stgp_` + benchmark name)
 pass a configuration file (.yaml) as an argument:
 
 ```bash
-$ python stgp_poisson.py poisson.yaml
+$ JAX_PLATFORMS=cpu python stgp_poisson.py poisson.yaml
 ```
+
+The flag `JAX_PLATFORMS=cpu` ensures that the CPU is used for fitness evaluations, as
+GPU is currently not supported.
 
 Check the online [documentation](https://alpine.readthedocs.io/en/latest/?badge=latest) of
 _AlpineGP_ for the meaning of the configuration parameters included in the .yaml file.
