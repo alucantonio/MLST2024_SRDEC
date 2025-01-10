@@ -11,6 +11,14 @@ _Prerequisites_: [AlpineGP](https://github.com/cpml-au/AlpineGP) library along w
 dependencies.
 
 ## Running the benchmarks
+
+For each benchmark, run the corresponding main script (`stgp_' + benchmark name) and
+pass a configuration file (.yaml) as an argument:
+
 ```bash
-§ python stgp_poisson.py poisson.yaml
+$ python stgp_poisson.py poisson.yaml
 ```
+
+Check the online documentation of
+[_AlpineGP_](https://alpine.readthedocs.io/en/latest/?badge=latest) for the meaning of
+the configuration parameters included in the .yaml file.
